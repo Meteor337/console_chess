@@ -31,6 +31,13 @@ else:
 current = 0  # 0 - белые, 1 - черные
 game_over = False
 
+# отслеживаем, двигались ли король и ладьи (для рокировки)
+white_king_moved = False
+white_rook_a_moved = False
+white_rook_h_moved = False
+black_king_moved = False
+black_rook_a_moved = False
+black_rook_h_moved = False
 
 # соответствие русских названий юникод-символам
 def piece_name_to_unicode(name, color):
@@ -61,7 +68,7 @@ def piece_name_to_unicode(name, color):
             return '♛'
         elif name == 'король' or name == 'кр':
             return '♚'
-
+    return None
 
 def unicode_to_piece_name(uni):
     if uni == '♙' or uni == '♟':
@@ -76,6 +83,7 @@ def unicode_to_piece_name(uni):
         return 'ферзь'
     elif uni == '♔' or uni == '♚':
         return 'король'
+    return ''
 
 def get_promotion_choice(color):
     print('\n ПЕШКА ДОШЛА ДО КРАЯ! ')
@@ -154,6 +162,11 @@ def col_to_index(col_letter):
         return 7
     return -1
 
+def index_to_col(index):
+    cols = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+    if 0 <= index <= 7:
+        return cols[index]
+    return ''
 
 def print_board():
     print('\n    a   b   c   d   e   f   g   h')
@@ -323,6 +336,57 @@ def is_check(color):
         return False
     return is_under_atack(king_pos, color)
 
+def can_castle(color, side):
+    global white_king_moved, white_rook_a_moved, white_rook_h_moved
+    global black_king_moved, black_rook_a_moved, black_rook_h_moved
+    
+    if is_check(color):
+        return False
+    
+    if color == 0:  # белые
+        if white_king_moved:
+            return False
+        if side == 'kingside':  # короткая рокировка (0-0)
+            if white_rook_h_moved:
+                return False
+            # клетки между королем и ладьей должны быть пусты
+            if board[7][5] != '.' or board[7][6] != '.':
+                return False
+            # король не должен проходить через битое поле
+            if is_under_atack([7, 5], color) or is_under_atack([7, 6], color):
+                return False
+            return True
+        elif side == 'queenside':  # длинная рокировка (0-0-0)
+            if white_rook_a_moved:
+                return False
+            # клетки между королем и ладьей должны быть пусты
+            if board[7][1] != '.' or board[7][2] != '.' or board[7][3] != '.':
+                return False
+            # король не должен проходить через битое поле
+            if is_under_atack([7, 3], color) or is_under_atack([7, 2], color):
+                return False
+            return True
+    else:  # черные
+        if black_king_moved:
+            return False
+        if side == 'kingside':  # короткая рокировка (0-0)
+            if black_rook_h_moved:
+                return False
+            if board[0][5] != '.' or board[0][6] != '.':
+                return False
+            if is_under_atack([0, 5], color) or is_under_atack([0, 6], color):
+                return False
+            return True
+        elif side == 'queenside':  # длинная рокировка (0-0-0)
+            if black_rook_a_moved:
+                return False
+            if board[0][1] != '.' or board[0][2] != '.' or board[0][3] != '.':
+                return False
+            if is_under_atack([0, 3], color) or is_under_atack([0, 2], color):
+                return False
+            return True
+    return False
+
 def can_move(from_pos, to_pos, piece):
     fr = from_pos[0]
     fc = from_pos[1]
@@ -346,7 +410,6 @@ def can_move(from_pos, to_pos, piece):
                 return True
             if dr == -1 and abs(dc) == 1 and target != '.' and is_black(target):
                 return True
-
         else:
             if dr == 1 and dc == 0 and target == '.':
                 return True
@@ -361,41 +424,23 @@ def can_move(from_pos, to_pos, piece):
 
     if p == 'r':
         if fr == tr or fc == tc:
-            step_r = 0
-            step_c = 0
-            if fr == tr:
-                if tc > fc:
-                    step_c = 1
-                else:
-                    step_c = -1
-            else:
-                if tr > fr:
-                    step_r = 1
-                else:
-                    step_r = -1
+            step_r = 0 if fr == tr else (1 if tr > fr else -1)
+            step_c = 0 if fc == tc else (1 if tc > fc else -1)
             
             r = fr + step_r
             c = fc + step_c
-            while r != tr and c != tc:
+            while r != tr or c != tc:
                 if board[r][c] != '.':
                     return False
-                if step_r != 0:
-                    r += step_r
-                if step_c != 0:
-                    c += step_c
+                r += step_r
+                c += step_c
             return True
         return False
 
     if p == 'b':
         if abs(dr) == abs(dc):
-            if dr > 0:
-                step_r = 1
-            else:
-                step_r = -1
-            if dc > 0:
-                step_c = 1
-            else:
-                step_c = -1
+            step_r = 1 if dr > 0 else -1
+            step_c = 1 if dc > 0 else -1
             r = fr + step_r
             c = fc + step_c
             while r != tr and c != tc:
@@ -408,22 +453,16 @@ def can_move(from_pos, to_pos, piece):
 
     if p == 'q':
         if fr == tr or fc == tc:
-            step_r = 0
-            step_c = 0
-            if fr == tr:
-                step_c = 1 if tc > fc else -1
-            else:
-                step_r = 1 if tr > fr else -1
+            step_r = 0 if fr == tr else (1 if tr > fr else -1)
+            step_c = 0 if fc == tc else (1 if tc > fc else -1)
             
             r = fr + step_r
             c = fc + step_c
             while r != tr or c != tc:
                 if board[r][c] != '.':
                     return False
-                if step_r != 0:
-                    r = r + step_r
-                if step_c != 0:
-                    c = c + step_c
+                r += step_r
+                c += step_c
             return True
         
         if abs(dr) == abs(dc):
@@ -434,8 +473,8 @@ def can_move(from_pos, to_pos, piece):
             while r != tr and c != tc:
                 if board[r][c] != '.':
                     return False
-                r = r + step_r
-                c = c + step_c
+                r += step_r
+                c += step_c
             return True
         return False
 
@@ -443,6 +482,152 @@ def can_move(from_pos, to_pos, piece):
         return abs(dr) <= 1 and abs(dc) <= 1
 
     return False
+
+def parse_square(square):
+    """Преобразует строку типа 'e2' в координаты (row, col)"""
+    if len(square) != 2:
+        return None
+    col = col_to_index(square[0])
+    if col == -1:
+        return None
+    try:
+        row = 8 - int(square[1])
+        if row < 0 or row > 7:
+            return None
+        return [row, col]
+    except ValueError:
+        return None
+
+def parse_move(move_text):
+    """Парсит ход в формате 'e2e4' или '0-0', '0-0-0'"""
+    move_text = move_text.strip().lower()
+    
+    # Проверка на рокировку
+    if move_text == '0-0' or move_text == 'o-o':
+        return ('castle', 'kingside')
+    if move_text == '0-0-0' or move_text == 'o-o-o':
+        return ('castle', 'queenside')
+    
+    # Проверка формата e2e4
+    if len(move_text) == 4:
+        from_sq = move_text[0:2]
+        to_sq = move_text[2:4]
+        
+        from_pos = parse_square(from_sq)
+        to_pos = parse_square(to_sq)
+        
+        if from_pos and to_pos:
+            return ('move', from_pos, to_pos)
+    
+    return None
+
+def find_piece_by_position(from_row, from_col, color):
+    """Проверяет, что на указанной позиции стоит фигура нужного цвета"""
+    if from_row < 0 or from_row > 7 or from_col < 0 or from_col > 7:
+        return None
+    
+    piece = board[from_row][from_col]
+    if piece == '.':
+        return None
+    
+    if color == 0 and not is_white(piece):
+        return None
+    if color == 1 and not is_black(piece):
+        return None
+    
+    return piece
+
+def update_castling_flags(piece, from_row, from_col):
+    """Обновляет флаги рокировки после хода"""
+    global white_king_moved, white_rook_a_moved, white_rook_h_moved
+    global black_king_moved, black_rook_a_moved, black_rook_h_moved
+    
+    if piece == '♔':  # белый король
+        white_king_moved = True
+    elif piece == '♚':  # черный король
+        black_king_moved = True
+    elif piece == '♖':  # белая ладья
+        if from_row == 7 and from_col == 0:
+            white_rook_a_moved = True
+        elif from_row == 7 and from_col == 7:
+            white_rook_h_moved = True
+    elif piece == '♜':  # черная ладья
+        if from_row == 0 and from_col == 0:
+            black_rook_a_moved = True
+        elif from_row == 0 and from_col == 7:
+            black_rook_h_moved = True
+
+def make_castle(color, side):
+    """Выполняет рокировку"""
+    global white_king_moved, white_rook_a_moved, white_rook_h_moved
+    global black_king_moved, black_rook_a_moved, black_rook_h_moved
+    
+    if color == 0:  # белые
+        if side == 'kingside':  # 0-0
+            # перемещаем короля
+            board[7][6] = board[7][4]
+            board[7][4] = '.'
+            # перемещаем ладью
+            board[7][5] = board[7][7]
+            board[7][7] = '.'
+            white_king_moved = True
+            white_rook_h_moved = True
+            print(" Белые сделали короткую рокировку (0-0)!")
+        else:  # queenside
+            board[7][2] = board[7][4]
+            board[7][4] = '.'
+            board[7][3] = board[7][0]
+            board[7][0] = '.'
+            white_king_moved = True
+            white_rook_a_moved = True
+            print(" Белые сделали длинную рокировку (0-0-0)!")
+    else:  # черные
+        if side == 'kingside':  # 0-0
+            board[0][6] = board[0][4]
+            board[0][4] = '.'
+            board[0][5] = board[0][7]
+            board[0][7] = '.'
+            black_king_moved = True
+            black_rook_h_moved = True
+            print(" Черные сделали короткую рокировку (0-0)!")
+        else:  # queenside
+            board[0][2] = board[0][4]
+            board[0][4] = '.'
+            board[0][3] = board[0][0]
+            board[0][0] = '.'
+            black_king_moved = True
+            black_rook_a_moved = True
+            print(" Черные сделали длинную рокировку (0-0-0)!")
+
+def make_move(from_row, from_col, to_row, to_col):
+    global current, game_over
+    global white_king_moved, white_rook_a_moved, white_rook_h_moved
+    global black_king_moved, black_rook_a_moved, black_rook_h_moved
+
+    piece = board[from_row][from_col]
+    
+    # Обновляем флаги рокировки
+    update_castling_flags(piece, from_row, from_col)
+    
+    # Выполняем ход
+    board[to_row][to_col] = piece
+    board[from_row][from_col] = '.'
+
+    # проверка превращения пешки
+    if check_promotion(to_row, to_col, current):
+        new_piece = get_promotion_choice(current)
+        board[to_row][to_col] = new_piece
+        print(f' Пешка превратилась в {unicode_to_piece_name(new_piece)}! ')
+
+    state = check_game_state()
+    if state != 0:
+        game_over = True
+        return
+
+    if current == 0:
+        current = 1
+    else:
+        current = 0
 
 # функция которая ищет фигуру, которая может пойти на target клетку
 def find_piece(piece_unicode, target_row, target_col, color):
@@ -461,7 +646,7 @@ def find_piece(piece_unicode, target_row, target_col, color):
                 continue
 
             if can_move([i, j], [target_row, target_col], p):
-                # проверка не пдставим ли мы короля
+                # проверка не подставим ли мы короля
                 temp = board[target_row][target_col]
                 board[target_row][target_col] = board[i][j]
                 board[i][j] = '.'
@@ -547,35 +732,12 @@ def check_game_state():
 
     return 0
 
-def make_move(from_row, from_col, to_row, to_col):
-    global current, game_over
-
-    piece = board[from_row][from_col]
-    board[to_row][to_col] = piece
-    board[from_row][from_col] = '.'
-
-    # проверка превращения пешки
-    if check_promotion(to_row, to_col, current):
-        new_piece = get_promotion_choice(current)
-        board[to_row][to_col] = new_piece
-        print(f' Пешка превратилась в {unicode_to_piece_name(new_piece)}! ')
-
-    state = check_game_state()
-    if state != 0:
-        game_over = True
-        return
-
-    if current == 0:
-        current = 1
-    else:
-        current = 0
-
 # основной цикл игры
 print('\n' + '='*50)
-print('Формат ввода: фигура клетка')
-print('Например: конь e4, пешка d5, ладья a1')
-print('Коротко: к e4, п d5, л a1, ф c4, с f3, кр g1')
-print('Пешки могут превращаться в любую фигуру на последней линии!')
+print('Форматы ввода:')
+print('1. Координатный: e2e4, g1f3')
+print('2. Рокировка: 0-0 (короткая), 0-0-0 (длинная)')
+print('3. Старый формат: конь e4, пешка d5')
 print('exit - выход')
 print('='*50 + '\n')
 
@@ -592,10 +754,65 @@ while not game_over:
         print('Игра прервана')
         break
 
-    # разбираем ввод
+    # Пробуем распарсить как координатный ход или рокировку
+    parsed = parse_move(move_text)
+    
+    if parsed and parsed[0] == 'castle':
+        # Рокировка
+        side = parsed[1]
+        if can_castle(current, side):
+            make_castle(current, side)
+            state = check_game_state()
+            if state != 0:
+                game_over = True
+                break
+            current = 1 if current == 0 else 0
+            continue
+        else:
+            print('❌ Рокировка невозможна!')
+            input('Нажми Enter...')
+            continue
+    
+    elif parsed and parsed[0] == 'move':
+        # Координатный ход
+        from_pos, to_pos = parsed[1], parsed[2]
+        from_row, from_col = from_pos
+        to_row, to_col = to_pos
+        
+        piece = find_piece_by_position(from_row, from_col, current)
+        if piece is None:
+            print(f'❌ На клетке {move_text[0:2]} нет вашей фигуры!')
+            input('Нажми Enter...')
+            continue
+        
+        if not can_move([from_row, from_col], [to_row, to_col], piece):
+            print(f'❌ Фигура {unicode_to_piece_name(piece)} не может так ходить!')
+            input('Нажми Enter...')
+            continue
+        
+        # Проверка не подставим ли мы короля
+        temp = board[to_row][to_col]
+        board[to_row][to_col] = board[from_row][from_col]
+        board[from_row][from_col] = '.'
+        
+        if is_check(current):
+            print('❌ Ход оставляет вашего короля под шахом!')
+            board[from_row][from_col] = board[to_row][to_col]
+            board[to_row][to_col] = temp
+            input('Нажми Enter...')
+            continue
+        
+        board[from_row][from_col] = board[to_row][to_col]
+        board[to_row][to_col] = temp
+        
+        # Делаем ход
+        make_move(from_row, from_col, to_row, to_col)
+        continue
+    
+    # Если не координатный ход и не рокировка, пробуем старый формат
     parts = move_text.split() 
     if len(parts) != 2:
-        print('❌ Нужно: фигура клетка (например: конь e4)')
+        print('❌ Неверный формат. Используйте: e2e4, 0-0, или конь e4')
         input('Нажми Enter...')
         continue
 
@@ -637,8 +854,7 @@ while not game_over:
         continue
     
     if len(possible) > 1:
-        print(f'❌ Несколько фигур могут пойти на {target}. Используй точные координаты (например: {piece_name} {target} уточни)')
-        print('   Или используй формат: a2a4 для точного хода')
+        print(f'❌ Несколько фигур могут пойти на {target}. Используй координатный формат (например: e2e4)')
         input('Нажми Enter...')
         continue
     
@@ -651,4 +867,3 @@ if game_over:
     print('\n' + '='*40)
     print('ИГРА ОКОНЧЕНА!')
     print('='*40)
-
